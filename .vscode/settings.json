@@ -1,0 +1,9 @@
+{
+    "python.formatting.provider": "black",
+    "editor.rulers": [
+        72
+    ],
+    "workbench.colorCustomizations": {
+        "editorRuler.foreground": "#8f8e8ed3"
+    }
+}

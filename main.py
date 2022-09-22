@@ -187,14 +187,16 @@ def print_model_performance(
     )
 
 
-def main():
+def bench_mark_encoding_and_algorithms(raw_data: pd.DataFrame) -> None:
     """
-    Main function
-    """
-    file_path = "network_flow_data.csv"
+    Bench mark encoding and algorithms and print performance metrics
+    after training
 
+    Args:
+        raw_data (pd.DataFrame): The raw data frame
+    """
     sampled_cleaned_data = return_cleaned_sampled_data_frame(
-        raw_data_frame=return_raw_data_frame(file_path),
+        raw_data_frame=raw_data,
         labels_with_sample_size={"normal": 2000, "attack": 2000},
     )
 
@@ -260,6 +262,58 @@ def main():
             ],
         ]
     ]
+
+
+def return_data_on_classification_ratio(raw_data: pd.DataFrame) -> None:
+    """
+    Return the data on classification ratio
+
+    Returns:
+        pd.DataFrame: The data on classification ratio
+    """
+    sampled_cleaned_data = return_cleaned_sampled_data_frame(
+        raw_data_frame=raw_data,
+        labels_with_sample_size={"normal": 2000, "attack": 2000},
+    )
+
+    one_hot_encoded_cleaned_data_frame = (
+        return_one_hot_encoded_cleaned_data_frame(
+            data_frame=sampled_cleaned_data
+        )
+    )
+
+    (x_test, x_train, y_test, y_train,) = return_train_test_split(
+        *return_x_y_split(
+            one_hot_encoded_cleaned_data_frame,
+            ["label_normal", "label_attack"],
+        ),
+    )
+
+    y_pred = return_train_model(
+        x_train, y_train, DecisionTreeClassifier
+    ).predict(x_test)
+
+    report = classification_report(
+        y_test, y_pred, zero_division=0, output_dict=True
+    )
+    data = [
+        report.get("0")["f1-score"],
+        report.get("1")["f1-score"],
+        report.get("accuracy"),
+    ]
+    print(data)
+
+
+def main() -> None:
+
+    """
+    Main function
+    """
+    file_path = "network_flow_data.csv"
+
+    raw_data = return_raw_data_frame(file_path)
+
+    return_data_on_classification_ratio(raw_data)
 
 
 if __name__ == "__main__":

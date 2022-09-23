@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from typing import List, Dict, Tuple, Union
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
@@ -8,6 +9,8 @@ from sklearn.metrics import (
     confusion_matrix,
     classification_report,
 )
+
+COL_CHAR_LIMIT = 79
 
 
 def return_raw_data_frame(file_path: str) -> pd.DataFrame:
@@ -23,8 +26,41 @@ def return_raw_data_frame(file_path: str) -> pd.DataFrame:
     return pd.read_csv(file_path)
 
 
-def return_cleaned_sampled_data_frame(
-    raw_data_frame: pd.DataFrame,
+def remove_reduntant_columns(data_frame: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove redundant columns
+
+    Args:
+        data_frame (pd.DataFrame): The data frame
+
+    Returns:
+        pd.DataFrame: The data frame with redundant columns removed
+    """
+    [
+        data_frame.drop(column_name, axis=1, inplace=True)
+        for column_name in data_frame.columns
+        if data_frame[column_name].nunique() == 1
+    ]
+    return data_frame
+
+
+def clean_data_frame(
+    data_frame: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Clean the data frame by removing null values and redundant columns
+
+    Args:
+        data_frame (pd.DataFrame): The data frame
+
+    Returns:
+        pd.DataFrame: The cleaned data frame
+    """
+    return remove_reduntant_columns(data_frame.fillna(0))
+
+
+def return_sampled_data_frame(
+    data_frame: pd.DataFrame,
     labels_with_sample_size: Dict[str, int],
 ) -> pd.DataFrame:
     """
@@ -41,9 +77,7 @@ def return_cleaned_sampled_data_frame(
     """
     return pd.concat(
         [
-            raw_data_frame[raw_data_frame["label"] == label].sample(
-                sample_size
-            )
+            data_frame[data_frame["label"] == label].sample(sample_size)
             for label, sample_size in labels_with_sample_size.items()
         ],
         ignore_index=True,
@@ -64,7 +98,11 @@ def return_one_hot_encoded_cleaned_data_frame(
         pd.DataFrame:
             The data frame with one-hot encoded categorical values
     """
-    return pd.get_dummies(data_frame)
+    return pd.get_dummies(
+        return_label_encoded_cleaned_data_frame(
+            data_frame=data_frame, categorical_column_names=["label"]
+        )
+    )
 
 
 def return_label_encoded_cleaned_data_frame(
@@ -94,7 +132,7 @@ def return_label_encoded_cleaned_data_frame(
 
 
 def return_x_y_split(
-    data_frame: pd.DataFrame, label_column_names: List[str]
+    data_frame: pd.DataFrame, label_column_name: str
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split the data frame into x and y sets
@@ -107,8 +145,8 @@ def return_x_y_split(
         tuple: The x and y sets in form of [x, y]
     """
     return (
-        data_frame.drop(label_column_names, axis=1).values,
-        data_frame[label_column_names.pop()].values,
+        data_frame.drop(label_column_name, axis=1),
+        data_frame[label_column_name],
     )
 
 
@@ -173,7 +211,7 @@ def print_model_performance(
     )
 
     len_model_name_encode_string = len(model_name_encode_string)
-    num_of_dashes = (80 - len_model_name_encode_string) // 2
+    num_of_dashes = (COL_CHAR_LIMIT - len_model_name_encode_string) // 2
 
     print(
         f"{'-' * num_of_dashes} {model_name_encode_string}",
@@ -187,7 +225,7 @@ def print_model_performance(
     )
 
 
-def bench_mark_encoding_and_algorithms(raw_data: pd.DataFrame) -> None:
+def bench_mark_encoding_and_algorithms(data: pd.DataFrame) -> None:
     """
     Bench mark encoding and algorithms and print performance metrics
     after training
@@ -195,20 +233,13 @@ def bench_mark_encoding_and_algorithms(raw_data: pd.DataFrame) -> None:
     Args:
         raw_data (pd.DataFrame): The raw data frame
     """
-    sampled_cleaned_data = return_cleaned_sampled_data_frame(
-        raw_data_frame=raw_data,
-        labels_with_sample_size={"normal": 2000, "attack": 2000},
-    )
-
     one_hot_encoded_cleaned_data_frame = (
-        return_one_hot_encoded_cleaned_data_frame(
-            data_frame=sampled_cleaned_data
-        )
+        return_one_hot_encoded_cleaned_data_frame(data_frame=data)
     )
 
     label_encoded_cleaned_data_frame = return_label_encoded_cleaned_data_frame(
-        data_frame=sampled_cleaned_data,
-        categorical_column_names=["label"],
+        data_frame=data,
+        categorical_column_names=["flgs", "dir", "state", "label"],
     )
 
     (
@@ -219,10 +250,9 @@ def bench_mark_encoding_and_algorithms(raw_data: pd.DataFrame) -> None:
     ) = return_train_test_split(
         *return_x_y_split(
             one_hot_encoded_cleaned_data_frame,
-            ["label_normal", "label_attack"],
+            ["label"],
         ),
     )
-
     (
         x_test_label_encoded,
         x_train_label_encoded,
@@ -264,44 +294,97 @@ def bench_mark_encoding_and_algorithms(raw_data: pd.DataFrame) -> None:
     ]
 
 
-def return_data_on_classification_ratio(raw_data: pd.DataFrame) -> None:
+def train_and_return_performance_data_for_given_ratio(
+    number_of_normal: int, number_of_attack: int, data: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Train and return performance data for given ratio
+
+    Args:
+        number_of_normal (int): The number of normal data points
+        number_of_attack (int): The number of attack data points
+
+    Returns:
+        pd.DataFrame: The performance data
+    """
+    normal_f1_scores = []
+    attack_f1_scores = []
+    accuracy_scores = []
+
+    for _ in range(10):
+        sampled_data = return_sampled_data_frame(
+            data_frame=data,
+            labels_with_sample_size={0: number_of_normal, 1: number_of_attack},
+        )
+
+        (x_test, x_train, y_test, y_train,) = return_train_test_split(
+            *return_x_y_split(
+                sampled_data,
+                "label",
+            ),
+        )
+
+        y_pred = return_train_model(
+            x_train, y_train, DecisionTreeClassifier
+        ).predict(x_test)
+
+        report = classification_report(
+            y_test, y_pred, zero_division=0, output_dict=True
+        )
+
+        normal_f1_scores.append(report["0"]["f1-score"])
+        attack_f1_scores.append(report["1"]["f1-score"])
+        accuracy_scores.append(report["accuracy"])
+
+    return (
+        np.average(normal_f1_scores),
+        np.average(attack_f1_scores),
+        np.average(accuracy_scores),
+    )
+
+
+def return_data_on_classification_ratio(data: pd.DataFrame) -> None:
     """
     Return the data on classification ratio
 
     Returns:
         pd.DataFrame: The data on classification ratio
     """
-    sampled_cleaned_data = return_cleaned_sampled_data_frame(
-        raw_data_frame=raw_data,
-        labels_with_sample_size={"normal": 2000, "attack": 2000},
-    )
+    total_number_of_records = 2000
+    number_of_data_points = 19
+    normal_f1_scores = []
+    attack_f1_scores = []
+    accuracy_scores = []
 
-    one_hot_encoded_cleaned_data_frame = (
-        return_one_hot_encoded_cleaned_data_frame(
-            data_frame=sampled_cleaned_data
+    for ratio in range(1, number_of_data_points + 1):
+        number_of_normal_records = int(
+            total_number_of_records * ratio / (number_of_data_points + 1)
         )
-    )
+        number_of_attack_records = (
+            total_number_of_records - number_of_normal_records
+        )
 
-    (x_test, x_train, y_test, y_train,) = return_train_test_split(
-        *return_x_y_split(
-            one_hot_encoded_cleaned_data_frame,
-            ["label_normal", "label_attack"],
-        ),
-    )
+        (
+            normal_f1_score,
+            attack_f1_score,
+            accuracy_score,
+        ) = train_and_return_performance_data_for_given_ratio(
+            number_of_normal_records,
+            number_of_attack_records,
+            data,
+        )
 
-    y_pred = return_train_model(
-        x_train, y_train, DecisionTreeClassifier
-    ).predict(x_test)
+        normal_f1_scores.append(normal_f1_score)
+        attack_f1_scores.append(attack_f1_score)
+        accuracy_scores.append(accuracy_score)
 
-    report = classification_report(
-        y_test, y_pred, zero_division=0, output_dict=True
+    return pd.DataFrame(
+        {
+            "Normal F1 Score": normal_f1_scores,
+            "Attack F1 Score": attack_f1_scores,
+            "Accuracy Score": accuracy_scores,
+        }
     )
-    data = [
-        report.get("0")["f1-score"],
-        report.get("1")["f1-score"],
-        report.get("accuracy"),
-    ]
-    print(data)
 
 
 def main() -> None:
@@ -311,9 +394,17 @@ def main() -> None:
     """
     file_path = "network_flow_data.csv"
 
-    raw_data = return_raw_data_frame(file_path)
+    one_hot_encoded_cleaned_data_frame = (
+        return_one_hot_encoded_cleaned_data_frame(
+            data_frame=clean_data_frame(
+                data_frame=return_raw_data_frame(file_path)
+            )
+        )
+    )
 
-    return_data_on_classification_ratio(raw_data)
+    return_data_on_classification_ratio(
+        data=one_hot_encoded_cleaned_data_frame
+    )
 
 
 if __name__ == "__main__":

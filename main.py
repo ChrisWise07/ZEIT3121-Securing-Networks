@@ -187,7 +187,7 @@ def return_train_model(
         model: The trained model
     """
     model = model_class()
-    model.fit(x_train, y_train)
+    model.fit(x_train, y_train.values.ravel())
     return model
 
 
@@ -243,21 +243,22 @@ def bench_mark_encoding_and_algorithms(data: pd.DataFrame) -> None:
     )
 
     (
-        x_test_one_hot_encoded,
         x_train_one_hot_encoded,
-        y_test_one_hot_encoded,
+        x_test_one_hot_encoded,
         y_train_one_hot_encoded,
+        y_test_one_hot_encoded,
     ) = return_train_test_split(
         *return_x_y_split(
             one_hot_encoded_cleaned_data_frame,
             ["label"],
         ),
     )
+
     (
-        x_test_label_encoded,
         x_train_label_encoded,
-        y_test_label_encoded,
+        x_test_label_encoded,
         y_train_label_encoded,
+        y_test_label_encoded,
     ) = return_train_test_split(
         *return_x_y_split(
             label_encoded_cleaned_data_frame,
@@ -317,7 +318,7 @@ def train_and_return_performance_data_for_given_ratio(
             labels_with_sample_size={0: number_of_normal, 1: number_of_attack},
         )
 
-        (x_test, x_train, y_test, y_train,) = return_train_test_split(
+        (x_train, x_test, y_train, y_test) = return_train_test_split(
             *return_x_y_split(
                 sampled_data,
                 "label",
@@ -394,17 +395,12 @@ def main() -> None:
     """
     file_path = "network_flow_data.csv"
 
-    one_hot_encoded_cleaned_data_frame = (
-        return_one_hot_encoded_cleaned_data_frame(
-            data_frame=clean_data_frame(
-                data_frame=return_raw_data_frame(file_path)
-            )
-        )
+    data = return_label_encoded_cleaned_data_frame(
+        clean_data_frame(data_frame=return_raw_data_frame(file_path)),
+        ["flgs", "dir", "state", "label"],
     )
 
-    return_data_on_classification_ratio(
-        data=one_hot_encoded_cleaned_data_frame
-    )
+    print(return_data_on_classification_ratio(data))
 
 
 if __name__ == "__main__":

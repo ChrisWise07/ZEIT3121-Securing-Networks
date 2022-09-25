@@ -144,9 +144,9 @@ ax.set_position(
 )
 
 colors = {
-    "Normal F1 Score": "b",
-    "Attack F1 Score": "r",
-    "Accuracy": "g",
+    "Average Normal F1 Score": "b",
+    "Average Attack F1 Score": "r",
+    "Average Accuracy": "g",
 }
 
 labels = list(colors.keys())

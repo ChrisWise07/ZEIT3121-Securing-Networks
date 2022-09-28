@@ -1,8 +1,12 @@
+from ast import mod
+from base64 import encode
+from hashlib import algorithms_available
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Tuple, Union
+from typing import Any, Callable, List, Dict, Tuple, Union
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import (
     accuracy_score,
@@ -85,7 +89,7 @@ def return_sampled_data_frame(
     )
 
 
-def return_one_hot_encoded_cleaned_data_frame(
+def return_one_hot_encoded_data_frame(
     data_frame: pd.DataFrame,
 ) -> pd.DataFrame:
     """
@@ -99,13 +103,13 @@ def return_one_hot_encoded_cleaned_data_frame(
             The data frame with one-hot encoded categorical values
     """
     return pd.get_dummies(
-        return_label_encoded_cleaned_data_frame(
+        return_label_encoded_data_frame(
             data_frame=data_frame, categorical_column_names=["label"]
         )
     )
 
 
-def return_label_encoded_cleaned_data_frame(
+def return_label_encoded_data_frame(
     data_frame: pd.DataFrame, categorical_column_names: List[str]
 ) -> pd.DataFrame:
     """
@@ -194,7 +198,7 @@ def return_train_model(
 def print_model_performance(
     y_pred: pd.DataFrame,
     y_test: pd.DataFrame,
-    model_class: Union[DecisionTreeClassifier, SVC],
+    model_class: Union[DecisionTreeClassifier, SVC, RandomForestClassifier],
     encoding_type: str = None,
 ) -> None:
     """
@@ -225,74 +229,69 @@ def print_model_performance(
     )
 
 
-def bench_mark_encoding_and_algorithms(data: pd.DataFrame) -> None:
+def train_test_models_with_encodings(
+    data: pd.DataFrame,
+    algorithms: List[
+        Union[DecisionTreeClassifier, SVC, RandomForestClassifier]
+    ],
+    encoding_functions_with_args: Dict[
+        Callable[[pd.DataFrame], pd.DataFrame], List[Any]
+    ],
+    algorithm_encoding_performance_data: Dict[str, Dict[str, float]],
+) -> None:
     """
-    Bench mark encoding and algorithms and print performance metrics
-    after training
+    Train and test models with different encodings and update
+    performance data
 
     Args:
-        raw_data (pd.DataFrame): The raw data frame
+        data (pd.DataFrame): The data frame
+        algorithms (List[Union[DecisionTreeClassifier, SVC]]):
+            The list of algorithms
+        encoding_functions_with_args (
+            Dict[Callable[[pd.DataFrame],
+            pd.DataFrame],
+            List[Any]]
+        ):
+            The list of encoding functions with their arguments
+        algorithm_encoding_performance_data (Dict[str, Dict[str, float]]):
+            The performance data that is updated
     """
-    one_hot_encoded_cleaned_data_frame = (
-        return_one_hot_encoded_cleaned_data_frame(data_frame=data)
-    )
+    encoding_with_train_test_split_data = {}
 
-    label_encoded_cleaned_data_frame = return_label_encoded_cleaned_data_frame(
-        data_frame=data,
-        categorical_column_names=["flgs", "dir", "state", "label"],
-    )
-
-    (
-        x_train_one_hot_encoded,
-        x_test_one_hot_encoded,
-        y_train_one_hot_encoded,
-        y_test_one_hot_encoded,
-    ) = return_train_test_split(
-        *return_x_y_split(
-            one_hot_encoded_cleaned_data_frame,
-            ["label"],
-        ),
-    )
-
-    (
-        x_train_label_encoded,
-        x_test_label_encoded,
-        y_train_label_encoded,
-        y_test_label_encoded,
-    ) = return_train_test_split(
-        *return_x_y_split(
-            label_encoded_cleaned_data_frame,
-            ["label"],
-        ),
-    )
-
-    [
-        print_model_performance(
-            y_pred=return_train_model(x_train, y_train, model_class).predict(
-                x_test
-            ),
-            y_test=y_test,
-            model_class=model_class,
-            encoding_type=encoding_type,
+    for encoding_function, args in encoding_functions_with_args.items():
+        encoding_with_train_test_split_data.update(
+            {
+                encoding_function.__name__: return_train_test_split(
+                    *return_x_y_split(
+                        encoding_function(data, *args),
+                        ["label"],
+                    ),
+                )
+            }
         )
-        for model_class in [DecisionTreeClassifier, SVC]
-        for x_train, x_test, y_train, y_test, encoding_type in [
-            [
-                x_train_one_hot_encoded,
-                x_test_one_hot_encoded,
-                y_train_one_hot_encoded,
-                y_test_one_hot_encoded,
-                "one hot encoded",
-            ],
-            [
-                x_train_label_encoded,
-                x_test_label_encoded,
-                y_train_label_encoded,
-                y_test_label_encoded,
-                "label encoded",
-            ],
-        ]
-    ]
+
+    for algorithm in algorithms:
+        for (
+            encoding_function_name,
+            train_test_split_data,
+        ) in encoding_with_train_test_split_data.items():
+            x_train, x_test, y_train, y_test = train_test_split_data
+
+            y_pred = return_train_model(x_train, y_train, algorithm).predict(
+                x_test
+            )
+
+            report = classification_report(
+                y_test, y_pred, zero_division=0, output_dict=True
+            )
+
+            algorithm_encoding_performance_data[
+                f"{algorithm.__name__} ({encoding_function_name})"
+            ]["accuracy"].append(report["accuracy"])
+
+            algorithm_encoding_performance_data[
+                f"{algorithm.__name__} ({encoding_function_name})"
+            ]["f1-scores"].append(report["weighted avg"]["f1-score"])
 
 
 def train_and_return_performance_data_for_given_ratio(
@@ -312,7 +311,7 @@ def train_and_return_performance_data_for_given_ratio(
     attack_f1_scores = []
     accuracy_scores = []
 
-    for _ in range(10):
+    for _ in range(20):
         sampled_data = return_sampled_data_frame(
             data_frame=data,
             labels_with_sample_size={0: number_of_normal, 1: number_of_attack},
@@ -388,6 +387,120 @@ def return_data_on_classification_ratio(data: pd.DataFrame) -> None:
     )
 
 
+def bench_mark_encoding_and_algorithms(
+    file_path: str, num_of_repetitions: int
+) -> pd.DataFrame:
+    """
+    Return performance data (average accuracy and f1 score) for
+    different encoding methods and algorithms
+
+    Args:
+        file_path (str): The file path
+        num_of_repetitions (int):
+            The number of repetitions of training and testing
+
+    Returns:
+        pd.DataFrame: The performance data
+    """
+    algorithm_encoding_performance_data = {}
+
+    algorithms = [
+        DecisionTreeClassifier,
+        SVC,
+        RandomForestClassifier,
+    ]
+
+    encoding_functions_with_args = {
+        return_one_hot_encoded_data_frame: [],
+        return_label_encoded_data_frame: [["flgs", "dir", "state", "label"]],
+    }
+
+    [
+        algorithm_encoding_performance_data.update(
+            {
+                f"{algorithm.__name__} ({encoding_function.__name__})": {
+                    "accuracy": [],
+                    "f1-scores": [],
+                },
+            }
+        )
+        for algorithm in algorithms
+        for encoding_function in encoding_functions_with_args.keys()
+    ]
+
+    for _ in range(num_of_repetitions):
+        data = return_sampled_data_frame(
+            clean_data_frame(data_frame=return_raw_data_frame(file_path)),
+            {"attack": 2000, "normal": 2000},
+        )
+        train_test_models_with_encodings(
+            data,
+            algorithms,
+            encoding_functions_with_args,
+            algorithm_encoding_performance_data,
+        )
+
+    average_algorithm_encoding_performance_data = {}
+
+    [
+        average_algorithm_encoding_performance_data.update(
+            {
+                f"{key}": {
+                    "average_accuracy": np.average(value["accuracy"]),
+                    "average_f1_score": np.average(value["f1-scores"]),
+                }
+            }
+        )
+        for key, value in algorithm_encoding_performance_data.items()
+    ]
+
+    return pd.DataFrame(
+        average_algorithm_encoding_performance_data
+    ).transpose()
+
+
+def return_data_on_classification_ratio_wrapper(file_path: str) -> None:
+    """
+    Wrapper function for return_data_on_classification_ratio
+    """
+    data = return_one_hot_encoded_data_frame(
+        clean_data_frame(data_frame=return_raw_data_frame(file_path)),
+    )
+
+    print(return_data_on_classification_ratio(data))
+
+
+def final_performance_data_wrapper(
+    file_path: str, num_of_repetitions: int
+) -> None:
+    """
+    Wrapper function for final_performance_data
+    """
+
+    for _ in range(num_of_repetitions):
+        x_train, x_test, y_train, y_test = return_train_test_split(
+            *return_x_y_split(
+                return_one_hot_encoded_data_frame(
+                    clean_data_frame(
+                        return_sampled_data_frame(
+                            return_raw_data_frame(file_path),
+                            {"attack": 2000, "normal": 2000},
+                        )
+                    ),
+                ),
+                ["label"],
+            )
+        )
+
+        print_model_performance(
+            y_pred=return_train_model(
+                x_train, y_train, RandomForestClassifier
+            ).predict(x_test),
+            y_test=y_test,
+            model_class=RandomForestClassifier,
+        )
+
+
 def main() -> None:
 
     """
@@ -395,12 +508,7 @@ def main() -> None:
     """
     file_path = "network_flow_data.csv"
 
-    data = return_label_encoded_cleaned_data_frame(
-        clean_data_frame(data_frame=return_raw_data_frame(file_path)),
-        ["flgs", "dir", "state", "label"],
-    )
-
-    print(return_data_on_classification_ratio(data))
+    final_performance_data_wrapper(file_path, 10)
 
 
 if __name__ == "__main__":

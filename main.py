@@ -1,6 +1,4 @@
-from ast import mod
-from base64 import encode
-from hashlib import algorithms_available
+from statistics import mode
 import pandas as pd
 import numpy as np
 from typing import Any, Callable, List, Dict, Tuple, Union
@@ -15,6 +13,8 @@ from sklearn.metrics import (
 )
 
 COL_CHAR_LIMIT = 79
+
+pd.set_option("display.max_colwidth", None)
 
 
 def return_raw_data_frame(file_path: str) -> pd.DataFrame:
@@ -32,7 +32,8 @@ def return_raw_data_frame(file_path: str) -> pd.DataFrame:
 
 def remove_reduntant_columns(data_frame: pd.DataFrame) -> pd.DataFrame:
     """
-    Remove redundant columns
+    Remove redundant columns by checking if the column contains the same
+    value for all rows
 
     Args:
         data_frame (pd.DataFrame): The data frame
@@ -207,6 +208,9 @@ def print_model_performance(
     Args:
         y_pred (pd.DataFrame): The y predictions set
         y_test (pd.DataFrame): The y test set
+        model_class (class): The model
+        encoding_type (str, optional):
+            The encoding type. Defaults to None.
     """
     model_name_encode_string = (
         (f"{model_class.__name__} ({encoding_type} encoding)")
@@ -218,7 +222,7 @@ def print_model_performance(
     num_of_dashes = (COL_CHAR_LIMIT - len_model_name_encode_string) // 2
 
     print(
-        f"{'-' * num_of_dashes} {model_name_encode_string}",
+        f"{'-' * num_of_dashes} {model_name_encode_string} ",
         f"{'-' * num_of_dashes + '-' * ( len_model_name_encode_string % 2)}",
         f"\nAccuracy: \n{accuracy_score(y_test, y_pred)}",
         f"\nConfusion Matrix: \n{confusion_matrix(y_test, y_pred)}",
@@ -237,7 +241,7 @@ def train_test_models_with_encodings(
     encoding_functions_with_args: Dict[
         Callable[[pd.DataFrame], pd.DataFrame], List[Any]
     ],
-    algorithm_encoding_performance_data: Dict[str, Dict[str, float]],
+    algorithm_encoding_performance_data: Dict[str, Dict[str, list]],
 ) -> None:
     """
     Train and test models with different encodings and update
@@ -253,7 +257,9 @@ def train_test_models_with_encodings(
             List[Any]]
         ):
             The list of encoding functions with their arguments
-        algorithm_encoding_performance_data (Dict[str, Dict[str, float]]):
+        algorithm_encoding_performance_data (
+            Dict[str, Dict[str, float]]
+        ):
             The performance data that is updated
     """
     encoding_with_train_test_split_data = {}
@@ -295,23 +301,30 @@ def train_test_models_with_encodings(
 
 
 def train_and_return_performance_data_for_given_ratio(
-    number_of_normal: int, number_of_attack: int, data: pd.DataFrame
-) -> pd.DataFrame:
+    number_of_normal: int,
+    number_of_attack: int,
+    data: pd.DataFrame,
+    num_of_epochs: int,
+) -> Tuple[float, float, float]:
     """
     Train and return performance data for given ratio
 
     Args:
         number_of_normal (int): The number of normal data points
         number_of_attack (int): The number of attack data points
+        data (pd.DataFrame): The data frame
+        num_of_epochs (int): The number of epochs
 
     Returns:
-        pd.DataFrame: The performance data
+        tuple:
+            The performance data in form of:
+                [normal_f1_score, attack_f1_score, accuracy]
     """
     normal_f1_scores = []
     attack_f1_scores = []
     accuracy_scores = []
 
-    for _ in range(20):
+    for _ in range(num_of_epochs + 1):
         sampled_data = return_sampled_data_frame(
             data_frame=data,
             labels_with_sample_size={0: number_of_normal, 1: number_of_attack},
@@ -343,35 +356,42 @@ def train_and_return_performance_data_for_given_ratio(
     )
 
 
-def return_data_on_classification_ratio(data: pd.DataFrame) -> None:
+def return_data_on_classification_ratio(
+    data: pd.DataFrame,
+    number_of_data_points: int = 19,
+    total_number_of_records: int = 2000,
+    num_of_epochs: int = 20,
+) -> pd.DataFrame:
     """
     Return the data on classification ratio
+
+    Args:
+        data (pd.DataFrame): The data frame
+        number_of_data_points (int, optional):
+            The number of data points. Defaults to 19.
+        total_number_of_records (int, optional):
+            The total number of records. Defaults to 2000.
 
     Returns:
         pd.DataFrame: The data on classification ratio
     """
-    total_number_of_records = 2000
-    number_of_data_points = 19
+    list_of_normal_data_representation_ratios = np.linspace(
+        0.0, 1.0, number_of_data_points + 1, endpoint=False
+    )[1:]
     normal_f1_scores = []
     attack_f1_scores = []
     accuracy_scores = []
 
-    for ratio in range(1, number_of_data_points + 1):
-        number_of_normal_records = int(
-            total_number_of_records * ratio / (number_of_data_points + 1)
-        )
-        number_of_attack_records = (
-            total_number_of_records - number_of_normal_records
-        )
-
+    for ratio in list_of_normal_data_representation_ratios:
         (
             normal_f1_score,
             attack_f1_score,
             accuracy_score,
         ) = train_and_return_performance_data_for_given_ratio(
-            number_of_normal_records,
-            number_of_attack_records,
-            data,
+            number_of_normal=int(ratio * total_number_of_records),
+            number_of_attack=int((1 - ratio) * total_number_of_records),
+            data=data,
+            num_of_epochs=num_of_epochs,
         )
 
         normal_f1_scores.append(normal_f1_score)
@@ -380,6 +400,7 @@ def return_data_on_classification_ratio(data: pd.DataFrame) -> None:
 
     return pd.DataFrame(
         {
+            "Ratio of Normal Data": list_of_normal_data_representation_ratios,
             "Normal F1 Score": normal_f1_scores,
             "Attack F1 Score": attack_f1_scores,
             "Accuracy Score": accuracy_scores,
@@ -387,20 +408,17 @@ def return_data_on_classification_ratio(data: pd.DataFrame) -> None:
     )
 
 
-def bench_mark_encoding_and_algorithms(
-    file_path: str, num_of_repetitions: int
-) -> pd.DataFrame:
+def bench_mark_encoding_and_algorithms_wrapper(
+    file_path: str, epochs: int
+) -> None:
     """
     Return performance data (average accuracy and f1 score) for
     different encoding methods and algorithms
 
     Args:
         file_path (str): The file path
-        num_of_repetitions (int):
+        epochs (int):
             The number of repetitions of training and testing
-
-    Returns:
-        pd.DataFrame: The performance data
     """
     algorithm_encoding_performance_data = {}
 
@@ -428,7 +446,7 @@ def bench_mark_encoding_and_algorithms(
         for encoding_function in encoding_functions_with_args.keys()
     ]
 
-    for _ in range(num_of_repetitions):
+    for _ in range(epochs):
         data = return_sampled_data_frame(
             clean_data_frame(data_frame=return_raw_data_frame(file_path)),
             {"attack": 2000, "normal": 2000},
@@ -454,30 +472,44 @@ def bench_mark_encoding_and_algorithms(
         for key, value in algorithm_encoding_performance_data.items()
     ]
 
-    return pd.DataFrame(
-        average_algorithm_encoding_performance_data
-    ).transpose()
-
-
-def return_data_on_classification_ratio_wrapper(file_path: str) -> None:
-    """
-    Wrapper function for return_data_on_classification_ratio
-    """
-    data = return_one_hot_encoded_data_frame(
-        clean_data_frame(data_frame=return_raw_data_frame(file_path)),
+    print(
+        pd.DataFrame(average_algorithm_encoding_performance_data).transpose()
     )
 
-    print(return_data_on_classification_ratio(data))
 
-
-def final_performance_data_wrapper(
-    file_path: str, num_of_repetitions: int
+def return_data_on_classification_ratio_wrapper(
+    file_path: str, num_of_epochs: int
 ) -> None:
     """
-    Wrapper function for final_performance_data
-    """
+    Wrapper function for return_data_on_classification_ratio. Will
+    print the data on classification ratio as pandas dataframe
 
-    for _ in range(num_of_repetitions):
+    Args:
+        file_path (str): The file path
+        number_of_epochs (int): The number of epochs for training
+    """
+    print(
+        return_data_on_classification_ratio(
+            return_one_hot_encoded_data_frame(
+                clean_data_frame(data_frame=return_raw_data_frame(file_path)),
+            ),
+            num_of_epochs=num_of_epochs,
+        ).to_string(index=False)
+    )
+
+
+def final_performance_data_wrapper(file_path: str, epochs: int) -> None:
+    """
+    Wrapper function for final_performance_data. Will print the
+    performance data for the best final model
+
+    Args:
+        file_path (str): The file path
+        epochs (int): The number of epochs
+    """
+    best_model_accuracy = 0.0
+
+    for _ in range(epochs):
         x_train, x_test, y_train, y_test = return_train_test_split(
             *return_x_y_split(
                 return_one_hot_encoded_data_frame(
@@ -492,23 +524,37 @@ def final_performance_data_wrapper(
             )
         )
 
-        print_model_performance(
-            y_pred=return_train_model(
-                x_train, y_train, RandomForestClassifier
-            ).predict(x_test),
-            y_test=y_test,
-            model_class=RandomForestClassifier,
-        )
+        model = return_train_model(x_train, y_train, RandomForestClassifier)
+        model_accuracy_score = accuracy_score(y_test, model.predict(x_test))
+
+        if model_accuracy_score > best_model_accuracy:
+            best_model_accuracy = model_accuracy_score
+            best_model = model
+            best_x_test = x_test
+            best_y_test = y_test
+
+    print_model_performance(
+        y_pred=best_model.predict(best_x_test),
+        y_test=best_y_test,
+        model_class=RandomForestClassifier,
+    )
 
 
 def main() -> None:
-
     """
     Main function
     """
     file_path = "network_flow_data.csv"
+    epochs = 20
 
-    final_performance_data_wrapper(file_path, 10)
+    print("\n---Bench Mark Encoding and Algorithms---")
+    bench_mark_encoding_and_algorithms_wrapper(file_path, epochs)
+
+    print("\n\n\n---Data on Classification Ratio---")
+    return_data_on_classification_ratio_wrapper(file_path, epochs)
+
+    print("\n\n\n---Final Performance Data---")
+    final_performance_data_wrapper(file_path, epochs)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-from statistics import mode
 import pandas as pd
 import numpy as np
 from typing import Any, Callable, List, Dict, Tuple, Union
@@ -73,7 +72,7 @@ def return_sampled_data_frame(
     sample of data for each label
 
     Args:
-        raw_data_frame (pd.DataFrame): The raw data frame
+        data_frame (pd.DataFrame): The raw data frame
         label_column_names (Dict[str:int]):
             labels and corresponding sample sizes
 
@@ -118,6 +117,8 @@ def return_label_encoded_data_frame(
 
     Args:
         data_frame (pd.DataFrame): The data frame
+        categorical_column_names (List[str]):
+            The categorical column names
 
     Returns:
         pd.DataFrame:
@@ -178,8 +179,8 @@ def return_train_test_split(
 def return_train_model(
     x_train: pd.DataFrame,
     y_train: pd.DataFrame,
-    model_class: Union[DecisionTreeClassifier, SVC],
-) -> Union[DecisionTreeClassifier, SVC]:
+    model_class: Union[DecisionTreeClassifier, SVC, RandomForestClassifier],
+) -> Union[DecisionTreeClassifier, SVC, RandomForestClassifier]:
     """
     Train a model
 
@@ -371,6 +372,8 @@ def return_data_on_classification_ratio(
             The number of data points. Defaults to 19.
         total_number_of_records (int, optional):
             The total number of records. Defaults to 2000.
+        num_of_epochs (int, optional):
+            The number of epochs. Defaults to 20.
 
     Returns:
         pd.DataFrame: The data on classification ratio
